@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0D0D10">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="CL Almacén">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>COLOR LED — Almacén</title>
+<style>
+:root{
+  --bg:#0D0D10; --panel:#17171C; --panel2:#1F2027; --line:#2B2C33;
+  --text:#F2F3F5; --sub:#9AA0AC; --accent:#FF7A1A; --accent-d:#C55A0E;
+  --ok:#22C55E; --warn:#F59E0B; --err:#EF4444; --info:#3B82F6;
+}
+*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+html,body{height:100%;background:var(--bg);color:var(--text)}
+#app{min-height:100dvh;display:flex;flex-direction:column}
+
+.hdr{background:var(--panel);border-bottom:1px solid var(--line);padding:12px 14px;display:flex;align-items:center;gap:10px;padding-top:max(12px,env(safe-area-inset-top));flex-shrink:0}
+.hdr-logo{width:34px;height:34px;border-radius:8px;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;color:#111;flex-shrink:0}
+.hdr-title{flex:1;min-width:0}
+.hdr-name{font-size:14px;font-weight:800}
+.hdr-sub{font-size:10px;color:var(--sub)}
+.status-dot{width:9px;height:9px;border-radius:50%;background:#64748b;flex-shrink:0}
+.queue-badge{background:var(--warn);color:#111;font-size:10px;font-weight:800;border-radius:10px;padding:2px 7px;display:none}
+.queue-badge.show{display:inline-block}
+.btn-icon{background:none;border:none;color:var(--sub);font-size:18px;cursor:pointer;padding:4px}
+
+.screen{display:none;flex:1;overflow-y:auto;padding:14px;padding-bottom:24px}
+.screen.active{display:flex;flex-direction:column;gap:12px}
+
+.field label{display:block;font-size:11px;font-weight:600;color:var(--sub);margin-bottom:5px}
+.field input{width:100%;padding:11px 12px;font-size:14px;border:1px solid var(--line);border-radius:10px;background:var(--panel2);color:var(--text);outline:none}
+.field input:focus{border-color:var(--accent)}
+.field{margin-bottom:12px}
+
+.btn{border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.btn-primary{background:var(--accent);color:#111}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed}
+.btn-outline{background:none;border:1.5px solid var(--line);color:var(--text)}
+.btn-danger{background:none;border:1.5px solid var(--err);color:var(--err)}
+.btn-ok{background:var(--ok);color:#052e13}
+.btn-sm{padding:8px 12px;font-size:12px;border-radius:8px}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:13px}
+.pk-card{display:flex;align-items:center;gap:10px;cursor:pointer}
+.pk-card:active{border-color:var(--accent)}
+.pk-name{font-size:14px;font-weight:800}
+.pk-partner{font-size:12px;color:var(--sub);margin-top:2px}
+.pk-meta{font-size:10px;color:var(--sub);margin-top:4px}
+.pk-arrow{color:var(--sub);font-size:18px}
+
+.empty{text-align:center;padding:40px 20px;color:var(--sub);font-size:13px}
+.loading{text-align:center;padding:40px 20px;color:var(--sub);font-size:13px}
+
+.det-hdr{display:flex;align-items:center;gap:8px}
+.det-name{font-size:16px;font-weight:900;flex:1}
+.det-partner{font-size:12px;color:var(--sub)}
+.progress-wrap{background:var(--panel2);border-radius:8px;height:8px;overflow:hidden;margin-top:8px}
+.progress-bar{height:100%;background:var(--accent);transition:width .3s}
+.progress-lbl{font-size:11px;color:var(--sub);margin-top:5px}
+
+.line{display:flex;gap:10px;align-items:center}
+.line-img{width:46px;height:46px;border-radius:8px;background:var(--panel2);border:1px solid var(--line);object-fit:cover;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px}
+.line-info{flex:1;min-width:0}
+.line-name{font-size:13px;font-weight:700}
+.line-code{font-size:10px;color:var(--sub)}
+.line-qty{font-size:12px;margin-top:3px}
+.line-qty.ok{color:var(--ok)}
+.line-qty.missing{color:var(--warn)}
+.line-done-badge{font-size:16px}
+
+.btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+
+#scr-scanner{display:none;position:fixed;inset:0;z-index:9999;background:#000;flex-direction:column}
+#scr-scanner.open{display:flex}
+.scanner-bar{background:#111;padding:12px 16px;display:flex;align-items:center;gap:10px;padding-top:max(12px,env(safe-area-inset-top));flex-shrink:0}
+.scanner-close{background:#333;border:none;color:#fff;border-radius:8px;padding:7px 14px;font-size:12px;cursor:pointer}
+.scanner-hint{color:#94a3b8;font-size:11px;text-align:center;padding:10px;background:#111;flex-shrink:0}
+#scanner-container{flex:1;width:100%;overflow:hidden}
+#scanner-container video{width:100%!important;height:100%!important;object-fit:cover}
+#scanner-container img{display:none}
+
+.toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ok);color:#052e13;font-size:12px;font-weight:700;padding:9px 16px;border-radius:20px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:99;white-space:nowrap;max-width:90vw;text-align:center}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+
+<div id="scr-scanner">
+  <div class="scanner-bar">
+    <button class="scanner-close" onclick="closeScanner()">✕ Cerrar</button>
+    <span style="color:#fff;font-size:13px;font-weight:600;flex:1;text-align:center">Escanear código</span>
+  </div>
+  <div id="scanner-container"></div>
+  <div class="scanner-hint">Apunta la cámara al código de barras del producto</div>
+</div>
+
+<div id="app">
+  <div class="hdr">
+    <div class="hdr-logo">CL</div>
+    <div class="hdr-title">
+      <div class="hdr-name">COLOR LED Almacén</div>
+      <div class="hdr-sub" id="hdr-sub">Sin configurar</div>
+    </div>
+    <span class="queue-badge" id="queue-badge">0</span>
+    <div class="status-dot" id="conn-dot" title="Conexión"></div>
+    <button class="btn-icon" onclick="goTo('scr-config')" title="Ajustes">⚙️</button>
+  </div>
+
+  <!-- CONFIGURACIÓN -->
+  <div class="screen" id="scr-config">
+    <div class="card">
+      <div class="field">
+        <label>URL del Worker</label>
+        <input id="cfg-url" placeholder="https://color-led-warehouse.tuusuario.workers.dev" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>API Key</label>
+        <input id="cfg-key" placeholder="Clave que configuraste en el Worker" autocomplete="off">
+      </div>
+      <div class="field" style="margin-bottom:0">
+        <label>Tu nombre (almacenista)</label>
+        <input id="cfg-op" placeholder="Ej. Juan Pérez" autocomplete="off">
+      </div>
+    </div>
+    <button class="btn btn-primary" onclick="saveConfig()">Guardar y continuar</button>
+    <div id="cfg-status" style="font-size:12px;color:var(--sub);text-align:center"></div>
+  </div>
+
+  <!-- LISTA DE ALBARANES -->
+  <div class="screen" id="scr-list">
+    <button class="btn btn-outline" onclick="loadPickings()">🔄 Actualizar</button>
+    <div id="pk-list"></div>
+  </div>
+
+  <!-- DETALLE / ESCANEO -->
+  <div class="screen" id="scr-detail">
+    <button class="btn-icon" style="align-self:flex-start" onclick="goTo('scr-list')">← Volver a la lista</button>
+    <div class="card">
+      <div class="det-hdr">
+        <div>
+          <div class="det-name" id="det-name">—</div>
+          <div class="det-partner" id="det-partner">—</div>
+        </div>
+      </div>
+      <div class="progress-wrap"><div class="progress-bar" id="det-progress" style="width:0%"></div></div>
+      <div class="progress-lbl" id="det-progress-lbl">0 / 0 unidades</div>
+    </div>
+
+    <button class="btn btn-primary" onclick="scanForCurrentPicking()">📷 Escanear producto</button>
+
+    <div id="det-lines"></div>
+
+    <div class="btn-row">
+      <button class="btn btn-ok" id="btn-validate" onclick="onValidate()">✅ Validar</button>
+      <button class="btn btn-danger" onclick="onShortage()">⚠️ No se puede completar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ── Service Worker ── */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(e => console.warn('SW:', e));
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CONFIGURACIÓN Y ESTADO
+   ═══════════════════════════════════════════════════════════════ */
+let CONFIG = JSON.parse(localStorage.getItem('cl_config') || 'null');
+let currentPicking = null;
+let QUEUE_KEY = 'cl_offline_queue';
+
+function toast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  const colors = { success:'var(--ok)', warn:'var(--warn)', error:'var(--err)', info:'var(--info)' };
+  t.style.background = colors[type] || colors.success;
+  t.classList.add('show');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+function goTo(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+function saveConfig() {
+  const url = document.getElementById('cfg-url').value.trim().replace(/\/$/, '');
+  const key = document.getElementById('cfg-key').value.trim();
+  const op  = document.getElementById('cfg-op').value.trim();
+  if (!url || !key || !op) {
+    document.getElementById('cfg-status').textContent = 'Completa los tres campos.';
+    return;
+  }
+  CONFIG = { workerUrl: url, apiKey: key, operatorName: op };
+  localStorage.setItem('cl_config', JSON.stringify(CONFIG));
+  updateHdr();
+  goTo('scr-list');
+  loadPickings();
+}
+
+function updateHdr() {
+  document.getElementById('hdr-sub').textContent = CONFIG ? CONFIG.operatorName : 'Sin configurar';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   API — llamadas al Worker (nunca directo a Odoo)
+   ═══════════════════════════════════════════════════════════════ */
+function makeSignal(ms) {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') return AbortSignal.timeout(ms);
+  const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal;
+}
+
+async function apiFetch(path, { method = 'GET', body } = {}) {
+  const res = await fetch(CONFIG.workerUrl + path, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-KEY': CONFIG.apiKey,
+      'X-Operator-Name': CONFIG.operatorName,
+    },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: makeSignal(15000),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false) throw new Error(data.error || ('HTTP ' + res.status));
+  return data;
+}
+
+async function pingWorker() {
+  const dot = document.getElementById('conn-dot');
+  try {
+    await fetch(CONFIG.workerUrl + '/health', { signal: makeSignal(6000) });
+    dot.style.background = 'var(--ok)'; dot.title = 'Conectado';
+  } catch (_e) {
+    dot.style.background = 'var(--err)'; dot.title = 'Sin conexión';
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   COLA OFFLINE — se guarda en localStorage, se reintenta al reconectar
+   ═══════════════════════════════════════════════════════════════ */
+function getQueue() { return JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); }
+function setQueue(q) {
+  localStorage.setItem(QUEUE_KEY, JSON.stringify(q));
+  const badge = document.getElementById('queue-badge');
+  if (q.length) { badge.textContent = q.length; badge.classList.add('show'); }
+  else { badge.classList.remove('show'); }
+}
+
+function enqueue(type, pickingId, payload) {
+  const q = getQueue();
+  q.push({ id: crypto.randomUUID(), type, pickingId, payload, ts: Date.now() });
+  setQueue(q);
+  toast('📴 Sin conexión — guardado para enviar después', 'warn');
+}
+
+async function flushQueue() {
+  if (!CONFIG) return;
+  let q = getQueue();
+  if (!q.length) return;
+  const remaining = [];
+  for (const op of q) {
+    try {
+      const payload = { ...op.payload, idempotency_key: op.id };
+      if (op.type === 'scan') await apiFetch(`/picking/${op.pickingId}/scan`, { method: 'POST', body: payload });
+      else if (op.type === 'validate') await apiFetch(`/picking/${op.pickingId}/validate`, { method: 'POST', body: payload });
+      else if (op.type === 'shortage') await apiFetch(`/picking/${op.pickingId}/shortage`, { method: 'POST', body: payload });
+    } catch (e) {
+      remaining.push(op); /* se detiene el orden si algo falla, para no desordenar */
+    }
+  }
+  setQueue(remaining);
+  if (remaining.length < q.length) toast('✅ ' + (q.length - remaining.length) + ' operación(es) sincronizada(s)');
+  if (currentPicking) openPicking(currentPicking.id, true);
+}
+
+window.addEventListener('online', flushQueue);
+
+/* ═══════════════════════════════════════════════════════════════
+   LISTA DE ALBARANES
+   ═══════════════════════════════════════════════════════════════ */
+async function loadPickings() {
+  const el = document.getElementById('pk-list');
+  el.innerHTML = '<div class="loading">Cargando…</div>';
+  try {
+    const { pickings } = await apiFetch('/pickings');
+    if (!pickings.length) { el.innerHTML = '<div class="empty">No hay albaranes listos para preparar.</div>'; return; }
+    el.innerHTML = pickings.map(p => `
+      <div class="card pk-card" style="margin-bottom:8px" onclick="openPicking(${p.id})">
+        <div style="flex:1;min-width:0">
+          <div class="pk-name">${p.name}</div>
+          <div class="pk-partner">${p.partner_name || 'Sin cliente'}</div>
+          <div class="pk-meta">${p.origin || ''} ${p.scheduled_date ? '· ' + p.scheduled_date : ''}</div>
+        </div>
+        <span class="pk-arrow">›</span>
+      </div>`).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="empty">❌ ${e.message}</div>`;
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DETALLE DE ALBARÁN
+   ═══════════════════════════════════════════════════════════════ */
+async function openPicking(id, silent) {
+  if (!silent) goTo('scr-detail');
+  try {
+    const { picking } = await apiFetch('/picking/' + id);
+    currentPicking = picking;
+    renderDetail();
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+function renderDetail() {
+  const p = currentPicking;
+  document.getElementById('det-name').textContent = p.name;
+  document.getElementById('det-partner').textContent = p.partner_name || 'Sin cliente';
+  const pct = p.total_demanded ? Math.min(100, Math.round(100 * p.total_done / p.total_demanded)) : 0;
+  document.getElementById('det-progress').style.width = pct + '%';
+  document.getElementById('det-progress-lbl').textContent = `${p.total_done} / ${p.total_demanded} unidades`;
+
+  document.getElementById('det-lines').innerHTML = p.move_lines.map(m => `
+    <div class="card line" style="margin-bottom:8px">
+      ${m.image_data_url
+        ? `<img class="line-img" src="${m.image_data_url}">`
+        : `<div class="line-img">📦</div>`}
+      <div class="line-info">
+        <div class="line-name">${m.product_name}</div>
+        <div class="line-code">${m.default_code || ''} ${m.barcode ? '· ' + m.barcode : ''}</div>
+        <div class="line-qty ${m.is_complete ? 'ok' : 'missing'}">
+          ${m.qty_done} / ${m.qty_demanded} ${m.uom}
+          ${m.qty_missing > 0 ? ' · faltan ' + m.qty_missing : ''}
+        </div>
+      </div>
+      <span class="line-done-badge">${m.is_complete ? '✅' : ''}</span>
+    </div>`).join('');
+
+  document.getElementById('btn-validate').disabled = false;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ESCÁNER — misma librería y patrón ya probado en Cotizador GONDER
+   ═══════════════════════════════════════════════════════════════ */
+let _qrScanner = null;
+let _scanCb = null;
+
+function openScanner(onDetect) {
+  _scanCb = onDetect;
+  document.getElementById('scr-scanner').classList.add('open');
+  const script = document.getElementById('qr-lib');
+  if (script) { _startQr(); return; }
+  const s = document.createElement('script');
+  s.id = 'qr-lib';
+  s.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+  s.onload = _startQr;
+  s.onerror = () => { closeScanner(); toast('❌ No se pudo cargar el lector', 'error'); };
+  document.head.appendChild(s);
+}
+
+function _startQr() {
+  try {
+    _qrScanner = new Html5Qrcode('scanner-container');
+    _qrScanner.start(
+      { facingMode: 'environment' },
+      { fps: 12, qrbox: { width: 260, height: 130 } },
+      (code) => { closeScanner(); if (_scanCb) _scanCb(code); },
+      () => {}
+    ).catch(() => { closeScanner(); toast('❌ Sin acceso a cámara', 'error'); });
+  } catch (e) { closeScanner(); toast('❌ ' + e.message, 'error'); }
+}
+
+function closeScanner() {
+  document.getElementById('scr-scanner').classList.remove('open');
+  if (_qrScanner) { _qrScanner.stop().catch(() => {}); _qrScanner = null; }
+}
+
+function scanForCurrentPicking() {
+  if (!currentPicking) return;
+  openScanner(async (code) => {
+    const line = currentPicking.move_lines.find(m => m.barcode === code || m.default_code === code);
+    if (!line) { toast('⚠️ Ese código no pertenece a este albarán', 'warn'); return; }
+    if (line.is_complete) { toast('ℹ️ ' + line.product_name + ' ya está completo', 'info'); return; }
+    await registerScan(line.product_id, 1);
+  });
+}
+
+async function registerScan(productId, qty) {
+  const pickingId = currentPicking.id;
+  /* Optimista: refleja el cambio en pantalla de inmediato */
+  const line = currentPicking.move_lines.find(m => m.product_id === productId);
+  if (line) {
+    line.qty_done += qty;
+    line.qty_missing = Math.max(0, line.qty_demanded - line.qty_done);
+    line.is_complete = line.qty_done >= line.qty_demanded && line.qty_demanded > 0;
+    currentPicking.total_done += qty;
+    currentPicking.is_fully_scanned = currentPicking.move_lines.every(m => m.is_complete);
+    renderDetail();
+  }
+  const payload = { product_id: productId, qty, operator_name: CONFIG.operatorName };
+  try {
+    await apiFetch(`/picking/${pickingId}/scan`, { method: 'POST', body: payload });
+    toast('✓ Escaneado');
+    openPicking(pickingId, true); /* refresca con datos reales del servidor */
+  } catch (e) {
+    enqueue('scan', pickingId, payload);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   VALIDAR / REPORTAR FALTANTE
+   ═══════════════════════════════════════════════════════════════ */
+async function onValidate() {
+  const p = currentPicking;
+  if (!p) return;
+  if (!p.is_fully_scanned) {
+    if (!confirm('Aún faltan unidades por escanear. ¿Validar de todos modos? Se generará una entrega parcial (backorder).')) return;
+  }
+  const payload = { operator_name: CONFIG.operatorName, force_partial: true };
+  try {
+    await apiFetch(`/picking/${p.id}/validate`, { method: 'POST', body: payload });
+    toast('✅ Albarán validado');
+    goTo('scr-list');
+    loadPickings();
+  } catch (e) {
+    enqueue('validate', p.id, payload);
+    goTo('scr-list');
+  }
+}
+
+async function onShortage() {
+  const p = currentPicking;
+  if (!p) return;
+  if (!confirm('¿Confirmas que este albarán se cierra con faltante? Se notificará al equipo.')) return;
+  const payload = { operator_name: CONFIG.operatorName };
+  try {
+    await apiFetch(`/picking/${p.id}/shortage`, { method: 'POST', body: payload });
+    toast('⚠️ Reportado con faltante');
+    goTo('scr-list');
+    loadPickings();
+  } catch (e) {
+    enqueue('shortage', p.id, payload);
+    goTo('scr-list');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INICIO
+   ═══════════════════════════════════════════════════════════════ */
+(function init() {
+  if (CONFIG) {
+    document.getElementById('cfg-url').value = CONFIG.workerUrl;
+    document.getElementById('cfg-key').value = CONFIG.apiKey;
+    document.getElementById('cfg-op').value = CONFIG.operatorName;
+    updateHdr();
+    goTo('scr-list');
+    loadPickings();
+    pingWorker();
+    flushQueue();
+  } else {
+    goTo('scr-config');
+  }
+  setQueue(getQueue());
+})();
+</script>
+</body>
+</html>
