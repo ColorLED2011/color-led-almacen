@@ -146,6 +146,7 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
     </div>
 
     <button class="btn btn-primary" onclick="scanForCurrentPicking()">📷 Escanear producto</button>
+    <button class="btn btn-outline" onclick="manualEntry()">⌨️ Código no legible, escribirlo</button>
 
     <div id="det-lines"></div>
 
@@ -388,12 +389,24 @@ function closeScanner() {
 
 function scanForCurrentPicking() {
   if (!currentPicking) return;
-  openScanner(async (code) => {
-    const line = currentPicking.move_lines.find(m => m.barcode === code || m.default_code === code);
-    if (!line) { toast('⚠️ Ese código no pertenece a este albarán', 'warn'); return; }
-    if (line.is_complete) { toast('ℹ️ ' + line.product_name + ' ya está completo', 'info'); return; }
-    await registerScan(line.product_id, 1);
-  });
+  openScanner(async (code) => { await processScannedCode(code); });
+}
+
+/* Entrada manual: cuando la etiqueta está dañada o el código no se puede leer con la cámara */
+function manualEntry() {
+  if (!currentPicking) return;
+  const code = prompt('Escribe el código de barras o SKU del producto:');
+  if (code === null) return; /* canceló */
+  const trimmed = code.trim();
+  if (!trimmed) return;
+  processScannedCode(trimmed);
+}
+
+async function processScannedCode(code) {
+  const line = currentPicking.move_lines.find(m => m.barcode === code || m.default_code === code);
+  if (!line) { toast('⚠️ Ese código no pertenece a este albarán', 'warn'); return; }
+  if (line.is_complete) { toast('ℹ️ ' + line.product_name + ' ya está completo', 'info'); return; }
+  await registerScan(line.product_id, 1);
 }
 
 async function registerScan(productId, qty) {
