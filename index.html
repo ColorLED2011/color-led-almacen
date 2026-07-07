@@ -116,14 +116,6 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
   <!-- CONFIGURACIÓN -->
   <div class="screen" id="scr-config">
     <div class="card">
-      <div class="field">
-        <label>URL del Worker</label>
-        <input id="cfg-url" placeholder="https://color-led-warehouse.tuusuario.workers.dev" autocomplete="off">
-      </div>
-      <div class="field">
-        <label>API Key</label>
-        <input id="cfg-key" placeholder="Clave que configuraste en el Worker" autocomplete="off">
-      </div>
       <div class="field" style="margin-bottom:0">
         <label>Tu nombre (almacenista)</label>
         <input id="cfg-op" placeholder="Ej. Juan Pérez" autocomplete="off">
@@ -176,7 +168,13 @@ if ('serviceWorker' in navigator) {
 
 /* ═══════════════════════════════════════════════════════════════
    CONFIGURACIÓN Y ESTADO
-   ═══════════════════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════════════════
+   El Worker y la API Key son fijos para toda la flota de teléfonos
+   (los define Carolina una sola vez aquí); lo único que cambia por
+   dispositivo/turno es el nombre del almacenista. */
+const WORKER_URL = 'https://color-led-warehouse.colorlednaguanagua.workers.dev';
+const API_KEY     = 'CAMILAcarolinaMICHEL1111';
+
 let CONFIG = JSON.parse(localStorage.getItem('cl_config') || 'null');
 let currentPicking = null;
 let QUEUE_KEY = 'cl_offline_queue';
@@ -197,14 +195,12 @@ function goTo(id) {
 }
 
 function saveConfig() {
-  const url = document.getElementById('cfg-url').value.trim().replace(/\/$/, '');
-  const key = document.getElementById('cfg-key').value.trim();
-  const op  = document.getElementById('cfg-op').value.trim();
-  if (!url || !key || !op) {
-    document.getElementById('cfg-status').textContent = 'Completa los tres campos.';
+  const op = document.getElementById('cfg-op').value.trim();
+  if (!op) {
+    document.getElementById('cfg-status').textContent = 'Escribe tu nombre para continuar.';
     return;
   }
-  CONFIG = { workerUrl: url, apiKey: key, operatorName: op };
+  CONFIG = { workerUrl: WORKER_URL, apiKey: API_KEY, operatorName: op };
   localStorage.setItem('cl_config', JSON.stringify(CONFIG));
   updateHdr();
   goTo('scr-list');
@@ -463,9 +459,11 @@ async function onShortage() {
    INICIO
    ═══════════════════════════════════════════════════════════════ */
 (function init() {
-  if (CONFIG) {
-    document.getElementById('cfg-url').value = CONFIG.workerUrl;
-    document.getElementById('cfg-key').value = CONFIG.apiKey;
+  if (CONFIG && CONFIG.operatorName) {
+    /* El Worker/API Key siempre se toman de las constantes fijas,
+       aunque el dispositivo tenga guardada una config vieja. */
+    CONFIG = { workerUrl: WORKER_URL, apiKey: API_KEY, operatorName: CONFIG.operatorName };
+    localStorage.setItem('cl_config', JSON.stringify(CONFIG));
     document.getElementById('cfg-op').value = CONFIG.operatorName;
     updateHdr();
     goTo('scr-list');
