@@ -40,6 +40,7 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
 .field{margin-bottom:12px}
 
 .btn{border:none;border-radius:10px;padding:13px;font-size:14px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
 .btn-primary{background:var(--accent);color:#111}
 .btn-primary:disabled{opacity:.4;cursor:not-allowed}
 .btn-outline{background:none;border:1.5px solid var(--line);color:var(--text)}
@@ -151,9 +152,10 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
     <div id="det-lines"></div>
 
     <div class="btn-row">
-      <button class="btn btn-ok" id="btn-validate" onclick="onValidate()">✅ Validar</button>
+      <button class="btn btn-ok" id="btn-validate" onclick="onValidate()" disabled>✅ Validar</button>
       <button class="btn btn-danger" onclick="onShortage()">⚠️ No se puede completar</button>
     </div>
+    <div id="det-hint" style="font-size:11px;text-align:center"></div>
   </div>
 </div>
 
@@ -348,7 +350,17 @@ function renderDetail() {
       <span class="line-done-badge">${m.is_complete ? '✅' : ''}</span>
     </div>`).join('');
 
-  document.getElementById('btn-validate').disabled = false;
+  const btnV = document.getElementById('btn-validate');
+  const hint = document.getElementById('det-hint');
+  btnV.disabled = !p.is_fully_scanned;
+  if (p.is_fully_scanned) {
+    hint.textContent = 'Todo escaneado — ya puedes validar el albarán.';
+    hint.style.color = 'var(--ok)';
+  } else {
+    const missing = Math.max(0, p.total_demanded - p.total_done);
+    hint.textContent = `Faltan ${missing} unidad(es) por escanear — el botón Validar se activa solo cuando el albarán queda completo.`;
+    hint.style.color = 'var(--warn)';
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -389,24 +401,41 @@ function closeScanner() {
 
 function scanForCurrentPicking() {
   if (!currentPicking) return;
-  openScanner(async (code) => { await processScannedCode(code); });
+  openScanner(async (barcode) => { await handleBarcodeScan(barcode); });
 }
 
-/* Entrada manual: cuando la etiqueta está dañada o el código no se puede leer con la cámara */
+/* Escaneo con cámara: siempre busca por código de barras */
+async function handleBarcodeScan(barcode) {
+  const line = currentPicking.move_lines.find(m => m.barcode && m.barcode === barcode);
+  if (!line) { toast('⚠️ Ese código de barras no pertenece a este albarán', 'warn'); return; }
+  await promptQtyAndRegister(line);
+}
+
+/* Entrada manual: cuando la etiqueta está dañada o la cámara no puede leer el código de
+   barras. Aquí se anota el CÓDIGO DE PRODUCTO (SKU / referencia interna), nunca el de barras. */
 function manualEntry() {
   if (!currentPicking) return;
-  const code = prompt('Escribe el código de barras o SKU del producto:');
+  const code = prompt('Escribe el código de producto (SKU) del artículo:');
   if (code === null) return; /* canceló */
   const trimmed = code.trim();
   if (!trimmed) return;
-  processScannedCode(trimmed);
+  const line = currentPicking.move_lines.find(m => m.default_code && m.default_code.toLowerCase() === trimmed.toLowerCase());
+  if (!line) { toast('⚠️ Ese código de producto no pertenece a este albarán', 'warn'); return; }
+  promptQtyAndRegister(line);
 }
 
-async function processScannedCode(code) {
-  const line = currentPicking.move_lines.find(m => m.barcode === code || m.default_code === code);
-  if (!line) { toast('⚠️ Ese código no pertenece a este albarán', 'warn'); return; }
+/* Pide cuántas unidades registrar para la línea encontrada (por escaneo o entrada manual).
+   Permite tanto escanear/escribir varias veces (dejando 1 cada vez) como registrar de una
+   sola vez la cantidad completa solicitada. */
+async function promptQtyAndRegister(line) {
   if (line.is_complete) { toast('ℹ️ ' + line.product_name + ' ya está completo', 'info'); return; }
-  await registerScan(line.product_id, 1);
+  const missing = line.qty_missing;
+  const input = prompt(`${line.product_name}\nCantidad a registrar (máximo ${missing}):`, '1');
+  if (input === null) return; /* canceló */
+  let qty = parseFloat(String(input).replace(',', '.'));
+  if (!qty || isNaN(qty) || qty <= 0) { toast('⚠️ Cantidad inválida', 'warn'); return; }
+  if (qty > missing) qty = missing;
+  await registerScan(line.product_id, qty);
 }
 
 async function registerScan(productId, qty) {
@@ -438,7 +467,10 @@ async function onValidate() {
   const p = currentPicking;
   if (!p) return;
   if (!p.is_fully_scanned) {
-    if (!confirm('Aún faltan unidades por escanear. ¿Validar de todos modos? Se generará una entrega parcial (backorder).')) return;
+    /* Defensa adicional: el botón ya está disabled mientras falte escanear,
+       pero por si acaso nunca se debe poder validar sin completar el escaneo. */
+    toast('⚠️ Aún faltan unidades por escanear', 'warn');
+    return;
   }
   const payload = { operator_name: CONFIG.operatorName, force_partial: true };
   try {
