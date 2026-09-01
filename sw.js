@@ -4,7 +4,7 @@
                Network-only para el Worker (API de Odoo/Telegram)
    ============================================================ */
 
-const CACHE = 'color-led-almacen-v6';
+const CACHE = 'color-led-almacen-v7';
 const ASSETS = [
   './index.html',
   './manifest.json',
@@ -13,8 +13,19 @@ const ASSETS = [
   './icons/icon-maskable-512.png',
 ];
 
+/* cache.addAll() usa fetch() normal, que puede devolver una copia vieja desde
+   la caché HTTP del navegador aunque el archivo ya haya cambiado en el
+   servidor. Se fuerza { cache: 'reload' } para que la instalación del SW
+   siempre traiga los archivos frescos de la red, nunca de la caché HTTP. */
 self.addEventListener('install', evt => {
-  evt.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));
+  evt.waitUntil(
+    caches.open(CACHE).then(async c => {
+      await Promise.all(ASSETS.map(async url => {
+        const res = await fetch(url, { cache: 'reload' });
+        if (res && res.ok) await c.put(url, res);
+      }));
+    })
+  );
   self.skipWaiting();
 });
 
