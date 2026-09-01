@@ -89,6 +89,14 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
 
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--ok);color:#052e13;font-size:12px;font-weight:700;padding:9px 16px;border-radius:20px;opacity:0;transition:opacity .25s;pointer-events:none;z-index:99;white-space:nowrap;max-width:90vw;text-align:center}
 .toast.show{opacity:1}
+
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);display:none;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--bg);border-radius:14px;padding:18px;width:100%;max-width:340px}
+.modal-box h3{font-size:15px;font-weight:800;margin-bottom:4px}
+.modal-sub{font-size:12px;color:var(--sub);margin-bottom:14px}
+.modal-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:6px}
+.modal-actions .btn{flex:1}
 </style>
 </head>
 <body>
@@ -160,6 +168,26 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
 </div>
 
 <div class="toast" id="toast"></div>
+
+<div class="modal-overlay" id="manual-modal">
+  <div class="modal-box">
+    <h3>Registrar producto</h3>
+    <div class="modal-sub">Escribe el código y la cantidad recibida.</div>
+    <div class="field" style="margin-bottom:10px">
+      <label>Código de producto (SKU)</label>
+      <input id="manual-code" placeholder="Ej. CL011" autocomplete="off" autocapitalize="characters">
+    </div>
+    <div class="field" style="margin-bottom:4px">
+      <label>Cantidad</label>
+      <input id="manual-qty" type="number" inputmode="decimal" min="0" step="any" placeholder="1" value="1">
+    </div>
+    <div id="manual-error" style="font-size:11px;color:var(--err);min-height:14px;margin-bottom:6px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeManualModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="submitManualEntry()">Registrar</button>
+    </div>
+  </div>
+</div>
 
 <script>
 /* ── Service Worker ── */
@@ -412,20 +440,45 @@ async function handleBarcodeScan(barcode) {
 }
 
 /* Entrada manual: cuando la etiqueta está dañada o la cámara no puede leer el código de
-   barras. Aquí se anota el CÓDIGO DE PRODUCTO (SKU / referencia interna), nunca el de barras. */
+   barras. Aquí se anota el CÓDIGO DE PRODUCTO (SKU / referencia interna), nunca el de barras.
+   Se pide código y cantidad juntos en un mismo cuadro (no dos prompts seguidos). */
 function manualEntry() {
   if (!currentPicking) return;
-  const code = prompt('Escribe el código de producto (SKU) del artículo:');
-  if (code === null) return; /* canceló */
-  const trimmed = code.trim();
-  if (!trimmed) return;
-  const line = currentPicking.move_lines.find(m => m.default_code && m.default_code.toLowerCase() === trimmed.toLowerCase());
-  if (!line) { toast('⚠️ Ese código de producto no pertenece a este albarán', 'warn'); return; }
-  promptQtyAndRegister(line);
+  const err = document.getElementById('manual-error');
+  err.textContent = '';
+  document.getElementById('manual-code').value = '';
+  document.getElementById('manual-qty').value = '1';
+  document.getElementById('manual-modal').classList.add('open');
+  setTimeout(() => document.getElementById('manual-code').focus(), 50);
 }
 
-/* Pide cuántas unidades registrar para la línea encontrada (por escaneo o entrada manual).
-   Permite tanto escanear/escribir varias veces (dejando 1 cada vez) como registrar de una
+function closeManualModal() {
+  document.getElementById('manual-modal').classList.remove('open');
+}
+
+function submitManualEntry() {
+  const errEl = document.getElementById('manual-error');
+  errEl.textContent = '';
+  const code = document.getElementById('manual-code').value.trim();
+  if (!code) { errEl.textContent = 'Escribe el código de producto.'; return; }
+
+  const line = currentPicking.move_lines.find(m => m.default_code && m.default_code.toLowerCase() === code.toLowerCase());
+  if (!line) { errEl.textContent = 'Ese código no pertenece a este albarán.'; return; }
+  if (line.is_complete) { closeManualModal(); toast('ℹ️ ' + line.product_name + ' ya está completo', 'info'); return; }
+
+  const qtyRaw = document.getElementById('manual-qty').value;
+  let qty = parseFloat(String(qtyRaw).replace(',', '.'));
+  if (!qty || isNaN(qty) || qty <= 0) { errEl.textContent = 'Escribe una cantidad válida.'; return; }
+
+  const missing = line.qty_missing;
+  if (qty > missing) qty = missing;
+
+  closeManualModal();
+  registerScan(line.product_id, qty);
+}
+
+/* Pide cuántas unidades registrar para la línea encontrada (por escaneo con cámara).
+   Permite tanto escanear varias veces (dejando 1 cada vez) como registrar de una
    sola vez la cantidad completa solicitada. */
 async function promptQtyAndRegister(line) {
   if (line.is_complete) { toast('ℹ️ ' + line.product_name + ' ya está completo', 'info'); return; }
