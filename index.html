@@ -220,6 +220,11 @@ function toast(msg, type = 'success') {
   t._timer = setTimeout(() => t.classList.remove('show'), 3000);
 }
 
+/* Redondeo de presentación: evita mostrar 3.0000000001 en los avisos */
+function fmtQty(n) {
+  return Number(Number(n).toFixed(3));
+}
+
 function goTo(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
@@ -471,14 +476,17 @@ function submitManualEntry() {
   if (!qty || isNaN(qty) || qty <= 0) { errEl.textContent = 'Escribe una cantidad válida.'; return; }
 
   const missing = line.qty_missing;
-  if (qty > missing) qty = missing;
+  if (qty > missing) {
+    errEl.textContent = 'Solo faltan ' + fmtQty(missing) + ' unidad(es) de este producto.';
+    return;
+  }
 
   closeManualModal();
   registerScan(line.product_id, qty);
 }
 
-/* Pide cuántas unidades registrar para la línea encontrada (por escaneo con cámara).
-   Permite tanto escanear varias veces (dejando 1 cada vez) como registrar de una
+/* Pide cuántas unidades registrar para la línea encontrada (por escaneo o entrada manual).
+   Permite tanto escanear/escribir varias veces (dejando 1 cada vez) como registrar de una
    sola vez la cantidad completa solicitada. */
 async function promptQtyAndRegister(line) {
   if (line.is_complete) { toast('ℹ️ ' + line.product_name + ' ya está completo', 'info'); return; }
@@ -487,7 +495,10 @@ async function promptQtyAndRegister(line) {
   if (input === null) return; /* canceló */
   let qty = parseFloat(String(input).replace(',', '.'));
   if (!qty || isNaN(qty) || qty <= 0) { toast('⚠️ Cantidad inválida', 'warn'); return; }
-  if (qty > missing) qty = missing;
+  if (qty > missing) {
+    toast('⚠️ Solo faltan ' + fmtQty(missing) + ' de ' + line.product_name, 'warn');
+    return;
+  }
   await registerScan(line.product_id, qty);
 }
 
