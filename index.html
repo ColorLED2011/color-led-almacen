@@ -159,10 +159,14 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
 
     <div id="det-lines"></div>
 
+    <button class="btn btn-outline" onclick="triggerPhoto('open')">📸 Fotos caja abierta</button>
     <button class="btn btn-outline" onclick="printLabels()">🏷️ Imprimir etiquetas</button>
+    <button class="btn btn-outline" onclick="triggerPhoto('closed')">📸 Fotos caja cerrada con etiqueta</button>
+    <button class="btn btn-outline" onclick="pedidoArmado()">📦 Pedido armado</button>
+    <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
 
     <div class="btn-row">
-      <button class="btn btn-ok" id="btn-validate" onclick="onValidate()" disabled>✅ Validar</button>
+      <button class="btn btn-ok" id="btn-validate" onclick="onValidate()" disabled style="font-size:12px;line-height:1.25">🚚 Pedido entregado a operador logístico</button>
       <button class="btn btn-danger" onclick="onShortage()">⚠️ No se puede completar</button>
     </div>
     <div id="det-hint" style="font-size:11px;text-align:center"></div>
@@ -545,6 +549,13 @@ function printLabels() {
   const vatLine = p.partner_vat ? `<div class="sub">RIF ${p.partner_vat}</div>` : '';
   const dirLine = p.partner_address ? `<div class="dir">${p.partner_address}</div>` : '';
 
+  /* QR que lleva a la página pública donde el cliente confirma que recibió
+     la mercancía (sin precios) — dispara la factura borrador y el aviso
+     por Telegram cuando escribe su RIF. El token va firmado por el Worker,
+     nadie puede adivinarlo ni falsificarlo (ver hmacToken en worker.js). */
+  const trackUrl = `${WORKER_URL}/track/${p.id}?t=${encodeURIComponent(p.track_token || '')}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&margin=0&data=${encodeURIComponent(trackUrl)}`;
+
   let labelsHtml = '';
   for (let i = 1; i <= bultos; i++) {
     labelsHtml += `
@@ -565,6 +576,11 @@ function printLabels() {
           <span>${fecha}</span>
         </div>
         <div class="hr"></div>
+        <div class="qr-row">
+          <img class="qr" src="${qrUrl}" alt="QR">
+          <div class="qr-cap">Escanea para<br>confirmar<br>recepción</div>
+        </div>
+        <div class="hr"></div>
         <div class="foot">@GFgroupca</div>
       </div>`;
   }
@@ -577,10 +593,10 @@ function printLabels() {
 <meta charset="UTF-8">
 <title>Etiquetas ${p.name}</title>
 <style>
-@page { size: auto; margin: 8mm; }
+@page { size: auto; margin: 18mm 8mm 8mm 8mm; }
 *{box-sizing:border-box}
-body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0}
-.sheet{display:flex;flex-wrap:wrap;gap:6mm}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;display:flex;justify-content:center}
+.sheet{display:grid;grid-template-columns:repeat(2, 9cm);gap:6mm 8mm;justify-content:center}
 .label{width:9cm;min-height:6cm;border:1px dashed #999;border-radius:3mm;padding:4mm 5mm;page-break-inside:avoid}
 .row-top{display:flex;justify-content:space-between;align-items:baseline}
 .brand{font-size:9px;font-weight:700;letter-spacing:.5px;color:#555}
@@ -592,6 +608,9 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0}
 .ped-lbl{font-size:9px;color:#888;margin-top:1mm}
 .ped{font-size:19px;font-weight:700;line-height:1.1}
 .row-bottom{display:flex;justify-content:space-between;font-size:9px;color:#555;margin-top:2mm}
+.qr-row{display:flex;align-items:center;gap:3mm}
+.qr{width:20mm;height:20mm;flex-shrink:0}
+.qr-cap{font-size:7.5px;color:#555;line-height:1.25}
 .foot{font-size:10px;font-weight:700;color:#555;text-align:center}
 </style>
 </head>
@@ -601,6 +620,83 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0}
 </body>
 </html>`);
   win.document.close();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FOTOS DE BULTOS (caja abierta / caja cerrada con etiqueta)
+   ═══════════════════════════════════════════════════════════════
+   Abre la cámara del teléfono, comprime la foto en el navegador (para
+   no gastar datos móviles) y la sube al Worker, que la adjunta directo
+   al albarán en Odoo. El almacenista puede repetir el botón las veces
+   que necesite (una foto por bulto, o las que hagan falta). */
+let _photoKind = 'open';
+
+function triggerPhoto(kind) {
+  if (!currentPicking) return;
+  _photoKind = kind;
+  const input = document.getElementById('photo-input');
+  input.value = '';
+  input.click();
+}
+
+document.getElementById('photo-input').addEventListener('change', async (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (!file || !currentPicking) return;
+  const pickingId = currentPicking.id;
+  const kind = _photoKind;
+  const label = kind === 'closed' ? 'caja cerrada' : 'caja abierta';
+  toast('📤 Subiendo foto de ' + label + '…', 'info');
+  try {
+    const dataUrl = await resizeImageToDataUrl(file, 1280, 0.72);
+    const base64 = dataUrl.split(',')[1];
+    await apiFetch(`/picking/${pickingId}/photo`, {
+      method: 'POST',
+      body: { kind, filename: `${label}-${Date.now()}.jpg`, data_base64: base64, operator_name: CONFIG.operatorName },
+    });
+    toast('✅ Foto de ' + label + ' guardada en el pedido');
+  } catch (err) {
+    toast('⚠️ No se pudo subir la foto: ' + err.message, 'error');
+  }
+});
+
+/* Redimensiona/comprime una foto de cámara (suelen pesar varios MB) a un
+   JPEG liviano antes de subirla — importante porque el almacenista está
+   casi siempre con datos móviles, no wifi. */
+function resizeImageToDataUrl(file, maxWidth, quality) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('No se pudo leer la foto'));
+    reader.onload = () => {
+      img.onerror = () => reject(new Error('No se pudo procesar la foto'));
+      img.onload = () => {
+        const scale = Math.min(1, maxWidth / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PEDIDO ARMADO — solo avisa por Telegram que el pedido ya está listo
+   ═══════════════════════════════════════════════════════════════ */
+async function pedidoArmado() {
+  const p = currentPicking;
+  if (!p) return;
+  const payload = { operator_name: CONFIG.operatorName };
+  try {
+    await apiFetch(`/picking/${p.id}/armed`, { method: 'POST', body: payload });
+    toast('📦 Aviso enviado: pedido armado');
+  } catch (e) {
+    toast('⚠️ No se pudo avisar: ' + e.message, 'error');
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
@@ -618,7 +714,7 @@ async function onValidate() {
   const payload = { operator_name: CONFIG.operatorName, force_partial: true };
   try {
     await apiFetch(`/picking/${p.id}/validate`, { method: 'POST', body: payload });
-    toast('✅ Albarán validado');
+    toast('🚚 Pedido entregado a operador logístico');
     goTo('scr-list');
     loadPickings();
   } catch (e) {
