@@ -175,6 +175,22 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
 
 <div class="toast" id="toast"></div>
 
+<div class="modal-overlay" id="carrier-modal">
+  <div class="modal-box">
+    <h3>Operador logístico</h3>
+    <div class="modal-sub">¿Quién despacha este pedido? Escribe la empresa, el nombre del vendedor que lo entrega, o "Transporte interno" si lo llevamos nosotros.</div>
+    <div class="field" style="margin-bottom:4px">
+      <label>Operador logístico</label>
+      <input id="carrier-input" placeholder="Ej. Empresa (ej CH EXPRES), Juan Pérez, Transporte interno" autocomplete="off">
+    </div>
+    <div id="carrier-error" style="font-size:11px;color:var(--err);min-height:14px;margin-bottom:6px"></div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeCarrierModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="submitCarrier()">Registrar</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="manual-modal">
   <div class="modal-box">
     <h3>Registrar producto</h3>
@@ -742,8 +758,12 @@ async function pedidoArmado() {
 
 /* ═══════════════════════════════════════════════════════════════
    VALIDAR / REPORTAR FALTANTE
-   ═══════════════════════════════════════════════════════════════ */
-async function onValidate() {
+   ═══════════════════════════════════════════════════════════════
+   Antes de entregar, se pregunta quién se lleva el pedido (empresa de
+   transporte, el vendedor que lo despacha personalmente, o "Transporte
+   interno" si lo llevamos nosotros) — Carolina lo pidió para que quede
+   registrado y avisado por Telegram junto con la entrega. */
+function onValidate() {
   const p = currentPicking;
   if (!p) return;
   if (!p.is_fully_scanned) {
@@ -757,7 +777,32 @@ async function onValidate() {
     toast('⚠️ Primero toca "Pedido armado"', 'warn');
     return;
   }
-  const payload = { operator_name: CONFIG.operatorName, force_partial: true };
+  openCarrierModal();
+}
+
+function openCarrierModal() {
+  document.getElementById('carrier-error').textContent = '';
+  document.getElementById('carrier-input').value = '';
+  document.getElementById('carrier-modal').classList.add('open');
+  setTimeout(() => document.getElementById('carrier-input').focus(), 50);
+}
+
+function closeCarrierModal() {
+  document.getElementById('carrier-modal').classList.remove('open');
+}
+
+async function submitCarrier() {
+  const p = currentPicking;
+  if (!p) return;
+  const errEl = document.getElementById('carrier-error');
+  const carrierName = document.getElementById('carrier-input').value.trim();
+  if (!carrierName) {
+    errEl.textContent = 'Escribe quién se lleva el pedido.';
+    return;
+  }
+  closeCarrierModal();
+
+  const payload = { operator_name: CONFIG.operatorName, force_partial: true, carrier_name: carrierName };
   try {
     await apiFetch(`/picking/${p.id}/validate`, { method: 'POST', body: payload });
     toast('🚚 Pedido entregado a operador logístico');
