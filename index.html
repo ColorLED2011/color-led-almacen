@@ -391,22 +391,30 @@ function renderDetail() {
 
   const btnArmed = document.getElementById('btn-armed');
   btnArmed.textContent = p.is_armed ? '✅ Pedido armado' : '📦 Pedido armado';
+  /* "Pedido armado" exige que ya se haya subido la foto de caja cerrada
+     con etiqueta — Carolina pidió explícitamente que el pedido solo
+     cuente como armado cuando YA se tomó esa foto Y ADEMÁS se tocó este
+     botón, nunca con uno solo de los dos. */
+  btnArmed.disabled = !p.has_closed_photo;
 
   const btnV = document.getElementById('btn-validate');
   const hint = document.getElementById('det-hint');
   /* El botón de entrega exige DOS cosas: todo escaneado Y que ya se haya
-     tocado "Pedido armado" — así nadie despacha algo que nunca se marcó
-     como listo en almacén. */
+     tocado "Pedido armado" (que a su vez ya exige la foto de caja cerrada) —
+     así nadie despacha algo que nunca se marcó como listo en almacén. */
   btnV.disabled = !(p.is_fully_scanned && p.is_armed);
   if (p.is_fully_scanned && p.is_armed) {
     hint.textContent = 'Todo escaneado y pedido armado — ya puedes entregarlo al operador logístico.';
     hint.style.color = 'var(--ok)';
   } else if (!p.is_fully_scanned) {
     const missing = Math.max(0, p.total_demanded - p.total_done);
-    hint.textContent = `Faltan ${missing} unidad(es) por escanear — luego toca "Pedido armado" para poder entregarlo.`;
+    hint.textContent = `Faltan ${missing} unidad(es) por escanear — luego toma la foto de caja cerrada y toca "Pedido armado" para poder entregarlo.`;
+    hint.style.color = 'var(--warn)';
+  } else if (!p.has_closed_photo) {
+    hint.textContent = 'Todo escaneado — toma la foto de "Caja cerrada con etiqueta" para poder marcar "Pedido armado".';
     hint.style.color = 'var(--warn)';
   } else {
-    hint.textContent = 'Todo escaneado — toca "Pedido armado" para habilitar la entrega.';
+    hint.textContent = 'Todo escaneado y foto tomada — toca "Pedido armado" para habilitar la entrega.';
     hint.style.color = 'var(--warn)';
   }
 }
@@ -668,10 +676,16 @@ document.getElementById('photo-input').addEventListener('change', async (e) => {
   try {
     const dataUrl = await resizeImageToDataUrl(file, 1280, 0.72);
     const base64 = dataUrl.split(',')[1];
-    await apiFetch(`/picking/${pickingId}/photo`, {
+    const { picking } = await apiFetch(`/picking/${pickingId}/photo`, {
       method: 'POST',
       body: { kind, filename: `${label}-${Date.now()}.jpg`, data_base64: base64, operator_name: CONFIG.operatorName },
     });
+    /* Si es la foto de caja cerrada, refresca de inmediato para habilitar
+       "Pedido armado" sin que el almacenista tenga que recargar la app. */
+    if (picking && currentPicking && picking.id === currentPicking.id) {
+      currentPicking = picking;
+      renderDetail();
+    }
     toast('✅ Foto de ' + label + ' guardada en el pedido');
   } catch (err) {
     toast('⚠️ No se pudo subir la foto: ' + err.message, 'error');
@@ -709,6 +723,13 @@ function resizeImageToDataUrl(file, maxWidth, quality) {
 async function pedidoArmado() {
   const p = currentPicking;
   if (!p) return;
+  if (!p.has_closed_photo) {
+    /* Defensa adicional: el botón ya está disabled hasta subir la foto de
+       caja cerrada con etiqueta — el Worker también lo exige del lado del
+       servidor (ver handleArmed en worker.js). */
+    toast('⚠️ Primero sube la foto de "Caja cerrada con etiqueta"', 'warn');
+    return;
+  }
   const payload = { operator_name: CONFIG.operatorName };
   try {
     const { picking } = await apiFetch(`/picking/${p.id}/armed`, { method: 'POST', body: payload });
