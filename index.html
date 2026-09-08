@@ -162,7 +162,7 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
     <button class="btn btn-outline" onclick="triggerPhoto('open')">📸 Fotos caja abierta</button>
     <button class="btn btn-outline" onclick="printLabels()">🏷️ Imprimir etiquetas</button>
     <button class="btn btn-outline" onclick="triggerPhoto('closed')">📸 Fotos caja cerrada con etiqueta</button>
-    <button class="btn btn-outline" onclick="pedidoArmado()">📦 Pedido armado</button>
+    <button class="btn btn-outline" id="btn-armed" onclick="pedidoArmado()">📦 Pedido armado</button>
     <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
 
     <div class="btn-row">
@@ -389,15 +389,24 @@ function renderDetail() {
       <span class="line-done-badge">${m.is_complete ? '✅' : ''}</span>
     </div>`).join('');
 
+  const btnArmed = document.getElementById('btn-armed');
+  btnArmed.textContent = p.is_armed ? '✅ Pedido armado' : '📦 Pedido armado';
+
   const btnV = document.getElementById('btn-validate');
   const hint = document.getElementById('det-hint');
-  btnV.disabled = !p.is_fully_scanned;
-  if (p.is_fully_scanned) {
-    hint.textContent = 'Todo escaneado — ya puedes validar el albarán.';
+  /* El botón de entrega exige DOS cosas: todo escaneado Y que ya se haya
+     tocado "Pedido armado" — así nadie despacha algo que nunca se marcó
+     como listo en almacén. */
+  btnV.disabled = !(p.is_fully_scanned && p.is_armed);
+  if (p.is_fully_scanned && p.is_armed) {
+    hint.textContent = 'Todo escaneado y pedido armado — ya puedes entregarlo al operador logístico.';
     hint.style.color = 'var(--ok)';
-  } else {
+  } else if (!p.is_fully_scanned) {
     const missing = Math.max(0, p.total_demanded - p.total_done);
-    hint.textContent = `Faltan ${missing} unidad(es) por escanear — el botón Validar se activa solo cuando el albarán queda completo.`;
+    hint.textContent = `Faltan ${missing} unidad(es) por escanear — luego toca "Pedido armado" para poder entregarlo.`;
+    hint.style.color = 'var(--warn)';
+  } else {
+    hint.textContent = 'Todo escaneado — toca "Pedido armado" para habilitar la entrega.';
     hint.style.color = 'var(--warn)';
   }
 }
@@ -596,9 +605,9 @@ function printLabels() {
 @page { size: auto; margin: 18mm 8mm 8mm 8mm; }
 *{box-sizing:border-box}
 body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0}
-.topbar{position:sticky;top:0;background:#16181D;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;gap:10px;z-index:10}
-.topbar button{border:none;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:800;cursor:pointer}
-.topbar .back{background:#333;color:#fff}
+.topbar{position:sticky;top:0;background:#16181D;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:16px;gap:12px;z-index:10;flex-wrap:wrap}
+.topbar button{border:none;border-radius:10px;padding:16px 20px;font-size:18px;font-weight:800;cursor:pointer;flex:1;min-width:160px}
+.topbar .back{background:#444;color:#fff}
 .topbar .reprint{background:#65A30D;color:#111}
 .sheet-wrap{display:flex;justify-content:center;padding-top:6mm}
 .sheet{display:grid;grid-template-columns:repeat(2, 9cm);gap:6mm 8mm;justify-content:center}
@@ -702,8 +711,9 @@ async function pedidoArmado() {
   if (!p) return;
   const payload = { operator_name: CONFIG.operatorName };
   try {
-    await apiFetch(`/picking/${p.id}/armed`, { method: 'POST', body: payload });
-    toast('📦 Aviso enviado: pedido armado');
+    const { picking } = await apiFetch(`/picking/${p.id}/armed`, { method: 'POST', body: payload });
+    if (picking) { currentPicking = picking; renderDetail(); } /* habilita la entrega de inmediato */
+    toast('📦 Pedido armado — ya puedes entregarlo al operador logístico');
   } catch (e) {
     toast('⚠️ No se pudo avisar: ' + e.message, 'error');
   }
@@ -719,6 +729,11 @@ async function onValidate() {
     /* Defensa adicional: el botón ya está disabled mientras falte escanear,
        pero por si acaso nunca se debe poder validar sin completar el escaneo. */
     toast('⚠️ Aún faltan unidades por escanear', 'warn');
+    return;
+  }
+  if (!p.is_armed) {
+    /* Defensa adicional: el botón ya está disabled hasta tocar "Pedido armado". */
+    toast('⚠️ Primero toca "Pedido armado"', 'warn');
     return;
   }
   const payload = { operator_name: CONFIG.operatorName, force_partial: true };
