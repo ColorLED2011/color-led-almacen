@@ -595,7 +595,12 @@ function printLabels() {
 <style>
 @page { size: auto; margin: 18mm 8mm 8mm 8mm; }
 *{box-sizing:border-box}
-body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;display:flex;justify-content:center}
+body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0}
+.topbar{position:sticky;top:0;background:#16181D;color:#fff;display:flex;align-items:center;justify-content:space-between;padding:10px 14px;gap:10px;z-index:10}
+.topbar button{border:none;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:800;cursor:pointer}
+.topbar .back{background:#333;color:#fff}
+.topbar .reprint{background:#65A30D;color:#111}
+.sheet-wrap{display:flex;justify-content:center;padding-top:6mm}
 .sheet{display:grid;grid-template-columns:repeat(2, 9cm);gap:6mm 8mm;justify-content:center}
 .label{width:9cm;min-height:6cm;border:1px dashed #999;border-radius:3mm;padding:4mm 5mm;page-break-inside:avoid}
 .row-top{display:flex;justify-content:space-between;align-items:baseline}
@@ -612,10 +617,15 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0;display:
 .qr{width:20mm;height:20mm;flex-shrink:0}
 .qr-cap{font-size:7.5px;color:#555;line-height:1.25}
 .foot{font-size:10px;font-weight:700;color:#555;text-align:center}
+@media print { .topbar{ display:none } .sheet-wrap{ padding-top:0 } }
 </style>
 </head>
 <body>
-<div class="sheet">${labelsHtml}</div>
+<div class="topbar">
+  <button class="back" onclick="window.close()">← Volver al pedido</button>
+  <button class="reprint" onclick="window.print()">🖨️ Imprimir de nuevo</button>
+</div>
+<div class="sheet-wrap"><div class="sheet">${labelsHtml}</div></div>
 <script>window.onload = () => { window.print(); };<\/script>
 </body>
 </html>`);
