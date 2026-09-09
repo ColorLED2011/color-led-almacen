@@ -134,8 +134,30 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
     <div id="cfg-status" style="font-size:12px;color:var(--sub);text-align:center"></div>
   </div>
 
-  <!-- LISTA DE ALBARANES -->
+  <!-- INICIO: elegir Entregas o Recepciones -->
+  <div class="screen" id="scr-home">
+    <button class="btn btn-primary" style="padding:20px 16px;justify-content:flex-start;gap:14px;text-align:left" onclick="goSection('entrega')">
+      <span style="font-size:22px">🚚</span>
+      <span>
+        <span style="display:block;font-size:15px;font-weight:800">Entregas</span>
+        <span style="display:block;font-size:11px;font-weight:400;opacity:.85">Salidas a clientes</span>
+      </span>
+    </button>
+    <button class="btn" style="padding:20px 16px;justify-content:flex-start;gap:14px;text-align:left;background:#2563EB;color:#EAF1FF" onclick="goSection('recepcion')">
+      <span style="font-size:22px">📥</span>
+      <span>
+        <span style="display:block;font-size:15px;font-weight:800">Recepciones</span>
+        <span style="display:block;font-size:11px;font-weight:400;opacity:.85">Entradas de mercancía</span>
+      </span>
+    </button>
+  </div>
+
+  <!-- LISTA DE ALBARANES (entregas o recepciones, según currentType) -->
   <div class="screen" id="scr-list">
+    <div style="display:flex;align-items:center;gap:6px">
+      <button class="btn-icon" onclick="goTo('scr-home')" title="Volver al inicio">←</button>
+      <div style="font-size:15px;font-weight:800;flex:1" id="list-title">Entregas</div>
+    </div>
     <button class="btn btn-outline" onclick="loadPickings()">🔄 Actualizar</button>
     <div id="pk-list"></div>
   </div>
@@ -159,15 +181,16 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
 
     <div id="det-lines"></div>
 
-    <button class="btn btn-outline" onclick="triggerPhoto('open')">📸 Fotos caja abierta</button>
-    <button class="btn btn-outline" onclick="printLabels()">🏷️ Imprimir etiquetas</button>
-    <button class="btn btn-outline" onclick="triggerPhoto('closed')">📸 Fotos caja cerrada con etiqueta</button>
+    <button class="btn btn-outline" id="btn-photo-open" onclick="triggerPhoto('open')">📸 Fotos caja abierta</button>
+    <button class="btn btn-outline" id="btn-print-labels" onclick="printLabels()">🏷️ Imprimir etiquetas</button>
+    <button class="btn btn-outline" id="btn-photo-closed" onclick="triggerPhoto('closed')">📸 Fotos caja cerrada con etiqueta</button>
     <button class="btn btn-outline" id="btn-armed" onclick="pedidoArmado()">📦 Pedido armado</button>
+    <button class="btn btn-outline" id="btn-photo-received" onclick="triggerPhoto('received')" style="display:none">📸 Foto de mercancía recibida</button>
     <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
 
     <div class="btn-row">
       <button class="btn btn-ok" id="btn-validate" onclick="onValidate()" disabled style="font-size:12px;line-height:1.25">🚚 Pedido entregado a operador logístico</button>
-      <button class="btn btn-danger" onclick="onShortage()">⚠️ No se puede completar</button>
+      <button class="btn btn-danger" id="btn-shortage" onclick="onShortage()">⚠️ No se puede completar</button>
     </div>
     <div id="det-hint" style="font-size:11px;text-align:center"></div>
   </div>
@@ -230,7 +253,16 @@ const API_KEY     = 'CAMILAcarolinaMICHEL1111';
 
 let CONFIG = JSON.parse(localStorage.getItem('cl_config') || 'null');
 let currentPicking = null;
+let currentType = 'entrega'; /* 'entrega' (salida a cliente) o 'recepcion' (entrada de proveedor) */
 let QUEUE_KEY = 'cl_offline_queue';
+
+/* Elige la sección desde la pantalla de inicio y carga su lista. */
+function goSection(type) {
+  currentType = type;
+  document.getElementById('list-title').textContent = type === 'recepcion' ? 'Recepciones' : 'Entregas';
+  goTo('scr-list');
+  loadPickings(type);
+}
 
 function toast(msg, type = 'success') {
   const t = document.getElementById('toast');
@@ -261,8 +293,7 @@ function saveConfig() {
   CONFIG = { workerUrl: WORKER_URL, apiKey: API_KEY, operatorName: op };
   localStorage.setItem('cl_config', JSON.stringify(CONFIG));
   updateHdr();
-  goTo('scr-list');
-  loadPickings();
+  goTo('scr-home');
 }
 
 function updateHdr() {
@@ -346,11 +377,13 @@ window.addEventListener('online', flushQueue);
 /* ═══════════════════════════════════════════════════════════════
    LISTA DE ALBARANES
    ═══════════════════════════════════════════════════════════════ */
-async function loadPickings() {
+async function loadPickings(type) {
+  currentType = type || currentType;
+  document.getElementById('list-title').textContent = currentType === 'recepcion' ? 'Recepciones' : 'Entregas';
   const el = document.getElementById('pk-list');
   el.innerHTML = '<div class="loading">Cargando…</div>';
   try {
-    const { pickings } = await apiFetch('/pickings');
+    const { pickings } = await apiFetch('/pickings?type=' + currentType);
     if (!pickings.length) { el.innerHTML = '<div class="empty">No hay albaranes listos para preparar.</div>'; return; }
     el.innerHTML = pickings.map(p => `
       <div class="card pk-card" style="margin-bottom:8px" onclick="openPicking(${p.id})">
@@ -405,6 +438,18 @@ function renderDetail() {
       <span class="line-done-badge">${m.is_complete ? '✅' : ''}</span>
     </div>`).join('');
 
+  const incoming = !!p.is_incoming;
+
+  /* Los pasos de "caja abierta/cerrada", etiquetas impresas y "Pedido
+     armado" son propios del flujo de Entregas (salida a cliente) — en
+     Recepciones (entrada de proveedor) se ofrece en su lugar una sola
+     foto opcional de la mercancía recibida, sin esos requisitos. */
+  document.getElementById('btn-photo-open').style.display = incoming ? 'none' : '';
+  document.getElementById('btn-print-labels').style.display = incoming ? 'none' : '';
+  document.getElementById('btn-photo-closed').style.display = incoming ? 'none' : '';
+  document.getElementById('btn-armed').style.display = incoming ? 'none' : '';
+  document.getElementById('btn-photo-received').style.display = incoming ? '' : 'none';
+
   const btnArmed = document.getElementById('btn-armed');
   btnArmed.textContent = p.is_armed ? '✅ Pedido armado' : '📦 Pedido armado';
   /* "Pedido armado" exige que ya se haya subido la foto de caja cerrada
@@ -414,7 +459,26 @@ function renderDetail() {
   btnArmed.disabled = !p.has_closed_photo;
 
   const btnV = document.getElementById('btn-validate');
+  const btnS = document.getElementById('btn-shortage');
   const hint = document.getElementById('det-hint');
+
+  if (incoming) {
+    btnV.textContent = '✅ Recepción confirmada';
+    btnS.textContent = '⚠️ No coincide con lo esperado';
+    btnV.disabled = !p.is_fully_scanned;
+    if (p.is_fully_scanned) {
+      hint.textContent = 'Todo escaneado — ya puedes confirmar la recepción.';
+      hint.style.color = 'var(--ok)';
+    } else {
+      const missing = Math.max(0, p.total_demanded - p.total_done);
+      hint.textContent = `Faltan ${missing} unidad(es) por escanear.`;
+      hint.style.color = 'var(--warn)';
+    }
+    return;
+  }
+
+  btnV.textContent = '🚚 Pedido entregado a operador logístico';
+  btnS.textContent = '⚠️ No se puede completar';
   /* El botón de entrega exige DOS cosas: todo escaneado Y que ya se haya
      tocado "Pedido armado" (que a su vez ya exige la foto de caja cerrada) —
      así nadie despacha algo que nunca se marcó como listo en almacén. */
@@ -687,7 +751,7 @@ document.getElementById('photo-input').addEventListener('change', async (e) => {
   if (!file || !currentPicking) return;
   const pickingId = currentPicking.id;
   const kind = _photoKind;
-  const label = kind === 'closed' ? 'caja cerrada' : 'caja abierta';
+  const label = kind === 'closed' ? 'caja cerrada' : kind === 'received' ? 'mercancía recibida' : 'caja abierta';
   toast('📤 Subiendo foto de ' + label + '…', 'info');
   try {
     const dataUrl = await resizeImageToDataUrl(file, 1280, 0.72);
@@ -772,12 +836,33 @@ function onValidate() {
     toast('⚠️ Aún faltan unidades por escanear', 'warn');
     return;
   }
+  if (p.is_incoming) {
+    /* Recepciones no exige "Pedido armado" ni operador logístico — solo
+       que ya se haya escaneado todo lo esperado. */
+    confirmarRecepcion();
+    return;
+  }
   if (!p.is_armed) {
     /* Defensa adicional: el botón ya está disabled hasta tocar "Pedido armado". */
     toast('⚠️ Primero toca "Pedido armado"', 'warn');
     return;
   }
   openCarrierModal();
+}
+
+async function confirmarRecepcion() {
+  const p = currentPicking;
+  if (!p) return;
+  const payload = { operator_name: CONFIG.operatorName, force_partial: true };
+  try {
+    await apiFetch(`/picking/${p.id}/validate`, { method: 'POST', body: payload });
+    toast('✅ Recepción confirmada');
+    goTo('scr-list');
+    loadPickings('recepcion');
+  } catch (e) {
+    enqueue('validate', p.id, payload);
+    goTo('scr-list');
+  }
 }
 
 function openCarrierModal() {
@@ -807,7 +892,7 @@ async function submitCarrier() {
     await apiFetch(`/picking/${p.id}/validate`, { method: 'POST', body: payload });
     toast('🚚 Pedido entregado a operador logístico');
     goTo('scr-list');
-    loadPickings();
+    loadPickings('entrega');
   } catch (e) {
     enqueue('validate', p.id, payload);
     goTo('scr-list');
@@ -817,13 +902,16 @@ async function submitCarrier() {
 async function onShortage() {
   const p = currentPicking;
   if (!p) return;
-  if (!confirm('¿Confirmas que este albarán se cierra con faltante? Se notificará al equipo.')) return;
+  const msg = p.is_incoming
+    ? '¿Confirmas que esta recepción no coincide con lo esperado? Se notificará al equipo.'
+    : '¿Confirmas que este albarán se cierra con faltante? Se notificará al equipo.';
+  if (!confirm(msg)) return;
   const payload = { operator_name: CONFIG.operatorName };
   try {
     await apiFetch(`/picking/${p.id}/shortage`, { method: 'POST', body: payload });
-    toast('⚠️ Reportado con faltante');
+    toast(p.is_incoming ? '⚠️ Reportada diferencia en recepción' : '⚠️ Reportado con faltante');
     goTo('scr-list');
-    loadPickings();
+    loadPickings(currentType);
   } catch (e) {
     enqueue('shortage', p.id, payload);
     goTo('scr-list');
@@ -841,8 +929,7 @@ async function onShortage() {
     localStorage.setItem('cl_config', JSON.stringify(CONFIG));
     document.getElementById('cfg-op').value = CONFIG.operatorName;
     updateHdr();
-    goTo('scr-list');
-    loadPickings();
+    goTo('scr-home');
     pingWorker();
     flushQueue();
   } else {
