@@ -176,6 +176,7 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
       <div class="progress-lbl" id="det-progress-lbl">0 / 0 unidades</div>
     </div>
 
+    <button class="btn btn-outline" id="btn-print-picking" onclick="imprimirPicking()">🖨️ Imprimir picking</button>
     <button class="btn btn-primary" onclick="scanForCurrentPicking()">📷 Escanear producto</button>
     <button class="btn btn-outline" onclick="manualEntry()">⌨️ Código no legible, escribirlo</button>
 
@@ -727,6 +728,38 @@ body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;margin:0}
 </body>
 </html>`);
   win.document.close();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   IMPRIMIR PICKING (PDF nativo de Odoo)
+   ═══════════════════════════════════════════════════════════════
+   Carolina pidió imprimir el mismo documento "Operaciones de picking"
+   que genera Odoo — el Worker le pide ese PDF real a Odoo autenticado
+   y lo devuelve tal cual (ver /picking/:id/print-pdf en worker.js), así
+   queda idéntico al de Odoo. Se pide como blob (fetch con X-API-KEY) en
+   vez de abrir la URL directo, porque el endpoint exige ese header y un
+   enlace normal no puede mandarlo. */
+async function imprimirPicking() {
+  const p = currentPicking;
+  if (!p) return;
+
+  toast('🖨️ Generando PDF…', 'info');
+  try {
+    const res = await fetch(`${CONFIG.workerUrl}/picking/${p.id}/print-pdf`, {
+      headers: { 'X-API-KEY': CONFIG.apiKey },
+      signal: makeSignal(30000),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || ('HTTP ' + res.status));
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, '_blank');
+    if (!win) { toast('⚠️ Habilita las ventanas emergentes para imprimir', 'warn'); return; }
+  } catch (e) {
+    toast('⚠️ No se pudo generar el PDF: ' + e.message, 'error');
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════
