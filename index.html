@@ -186,6 +186,7 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
     <button class="btn btn-outline" id="btn-print-labels" onclick="printLabels()">🏷️ Imprimir etiquetas</button>
     <button class="btn btn-outline" id="btn-photo-closed" onclick="triggerPhoto('closed')">📸 Fotos caja cerrada con etiqueta</button>
     <button class="btn btn-outline" id="btn-armed" onclick="pedidoArmado()">📦 Pedido armado</button>
+    <button class="btn btn-outline" id="btn-photo-dispatch" onclick="triggerPhoto('dispatch')">📸 Foto despacho firmado / Orden de carga CH EXPRESS</button>
     <button class="btn btn-outline" id="btn-photo-received" onclick="triggerPhoto('received')" style="display:none">📸 Foto de mercancía recibida</button>
     <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
 
@@ -449,6 +450,7 @@ function renderDetail() {
   document.getElementById('btn-print-labels').style.display = incoming ? 'none' : '';
   document.getElementById('btn-photo-closed').style.display = incoming ? 'none' : '';
   document.getElementById('btn-armed').style.display = incoming ? 'none' : '';
+  document.getElementById('btn-photo-dispatch').style.display = incoming ? 'none' : '';
   document.getElementById('btn-photo-received').style.display = incoming ? '' : 'none';
 
   const btnArmed = document.getElementById('btn-armed');
@@ -458,6 +460,13 @@ function renderDetail() {
      cuente como armado cuando YA se tomó esa foto Y ADEMÁS se tocó este
      botón, nunca con uno solo de los dos. */
   btnArmed.disabled = !p.has_closed_photo;
+
+  /* Foto de "Despacho firmado / Orden de carga CH EXPRESS" — paso posterior
+     a "Pedido armado", requisito para habilitar la entrega (ver más abajo). */
+  const btnDispatch = document.getElementById('btn-photo-dispatch');
+  btnDispatch.textContent = p.has_dispatch_photo
+    ? '✅ Foto despacho firmado / Orden de carga CH EXPRESS'
+    : '📸 Foto despacho firmado / Orden de carga CH EXPRESS';
 
   const btnV = document.getElementById('btn-validate');
   const btnS = document.getElementById('btn-shortage');
@@ -480,22 +489,27 @@ function renderDetail() {
 
   btnV.textContent = '🚚 Pedido entregado a operador logístico';
   btnS.textContent = '⚠️ No se puede completar';
-  /* El botón de entrega exige DOS cosas: todo escaneado Y que ya se haya
-     tocado "Pedido armado" (que a su vez ya exige la foto de caja cerrada) —
-     así nadie despacha algo que nunca se marcó como listo en almacén. */
-  btnV.disabled = !(p.is_fully_scanned && p.is_armed);
-  if (p.is_fully_scanned && p.is_armed) {
-    hint.textContent = 'Todo escaneado y pedido armado — ya puedes entregarlo al operador logístico.';
+  /* El botón de entrega exige TRES cosas en orden: todo escaneado, "Pedido
+     armado" (que ya exige la foto de caja cerrada), y DESPUÉS de armado la
+     foto de "Despacho firmado / Orden de carga CH EXPRESS" — Carolina pidió
+     este último paso como prueba de que el vendedor firmó o de que ya existe
+     la orden de carga antes de soltar la mercancía al operador logístico. */
+  btnV.disabled = !(p.is_fully_scanned && p.is_armed && p.has_dispatch_photo);
+  if (p.is_fully_scanned && p.is_armed && p.has_dispatch_photo) {
+    hint.textContent = 'Todo listo — ya puedes entregarlo al operador logístico.';
     hint.style.color = 'var(--ok)';
   } else if (!p.is_fully_scanned) {
     const missing = Math.max(0, p.total_demanded - p.total_done);
-    hint.textContent = `Faltan ${missing} unidad(es) por escanear — luego toma la foto de caja cerrada y toca "Pedido armado" para poder entregarlo.`;
+    hint.textContent = `Faltan ${missing} unidad(es) por escanear — luego toma la foto de caja cerrada, toca "Pedido armado" y sube la foto de despacho.`;
     hint.style.color = 'var(--warn)';
   } else if (!p.has_closed_photo) {
     hint.textContent = 'Todo escaneado — toma la foto de "Caja cerrada con etiqueta" para poder marcar "Pedido armado".';
     hint.style.color = 'var(--warn)';
+  } else if (!p.is_armed) {
+    hint.textContent = 'Todo escaneado y foto tomada — toca "Pedido armado" para continuar.';
+    hint.style.color = 'var(--warn)';
   } else {
-    hint.textContent = 'Todo escaneado y foto tomada — toca "Pedido armado" para habilitar la entrega.';
+    hint.textContent = 'Pedido armado — falta subir la foto de "Despacho firmado" o la "Orden de carga CH EXPRESS" para poder entregarlo.';
     hint.style.color = 'var(--warn)';
   }
 }
@@ -784,7 +798,7 @@ document.getElementById('photo-input').addEventListener('change', async (e) => {
   if (!file || !currentPicking) return;
   const pickingId = currentPicking.id;
   const kind = _photoKind;
-  const label = kind === 'closed' ? 'caja cerrada' : kind === 'received' ? 'mercancía recibida' : 'caja abierta';
+  const label = kind === 'closed' ? 'caja cerrada' : kind === 'received' ? 'mercancía recibida' : kind === 'dispatch' ? 'despacho firmado / orden de carga' : 'caja abierta';
   toast('📤 Subiendo foto de ' + label + '…', 'info');
   try {
     const dataUrl = await resizeImageToDataUrl(file, 1280, 0.72);
@@ -878,6 +892,11 @@ function onValidate() {
   if (!p.is_armed) {
     /* Defensa adicional: el botón ya está disabled hasta tocar "Pedido armado". */
     toast('⚠️ Primero toca "Pedido armado"', 'warn');
+    return;
+  }
+  if (!p.has_dispatch_photo) {
+    /* Defensa adicional: el botón ya está disabled hasta subir esta foto. */
+    toast('⚠️ Primero sube la foto de "Despacho firmado" o la "Orden de carga CH EXPRESS"', 'warn');
     return;
   }
   openCarrierModal();
