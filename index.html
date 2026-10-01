@@ -414,6 +414,7 @@ async function openPicking(id, silent) {
   try {
     const { picking } = await apiFetch('/picking/' + id);
     currentPicking = picking;
+    if (!silent) document.getElementById('chk-count-confirm').checked = false; /* se reinicia por cada pedido nuevo */
     renderDetail();
   } catch (e) {
     toast('Error: ' + e.message, 'error');
@@ -460,10 +461,10 @@ function renderDetail() {
   const btnArmed = document.getElementById('btn-armed');
   btnArmed.textContent = p.is_armed ? '✅ Pedido armado' : '📦 Pedido armado';
   /* "Pedido armado" exige que ya se haya subido la foto de caja cerrada
-     con etiqueta — Carolina pidió explícitamente que el pedido solo
-     cuente como armado cuando YA se tomó esa foto Y ADEMÁS se tocó este
-     botón, nunca con uno solo de los dos. */
-  btnArmed.disabled = !p.has_closed_photo;
+     con etiqueta Y que el almacenista haya marcado el checkbox de conteo
+     físico — Carolina pidió este último como requisito explícito antes de
+     armar, además de todo lo que ya exigía. */
+  btnArmed.disabled = !p.has_closed_photo || !document.getElementById('chk-count-confirm').checked;
 
   /* Foto de "Despacho firmado / Orden de carga CH EXPRESS" — paso posterior
      a "Pedido armado", requisito para habilitar la entrega (ver más abajo). */
@@ -508,6 +509,9 @@ function renderDetail() {
     hint.style.color = 'var(--warn)';
   } else if (!p.has_closed_photo) {
     hint.textContent = 'Todo escaneado — toma la foto de "Caja cerrada con etiqueta" para poder marcar "Pedido armado".';
+    hint.style.color = 'var(--warn)';
+  } else if (!document.getElementById('chk-count-confirm').checked) {
+    hint.textContent = 'Marca el checkbox de conteo físico para poder marcar "Pedido armado".';
     hint.style.color = 'var(--warn)';
   } else if (!p.is_armed) {
     hint.textContent = 'Todo escaneado y foto tomada — toca "Pedido armado" para continuar.';
@@ -797,6 +801,11 @@ function triggerPhoto(kind) {
   input.click();
 }
 
+/* Reevalúa el botón "Pedido armado" al marcar/desmarcar el checkbox de conteo físico. */
+document.getElementById('chk-count-confirm').addEventListener('change', () => {
+  if (currentPicking) renderDetail();
+});
+
 document.getElementById('photo-input').addEventListener('change', async (e) => {
   const file = e.target.files && e.target.files[0];
   if (!file || !currentPicking) return;
@@ -859,6 +868,11 @@ async function pedidoArmado() {
        caja cerrada con etiqueta — el Worker también lo exige del lado del
        servidor (ver handleArmed en worker.js). */
     toast('⚠️ Primero sube la foto de "Caja cerrada con etiqueta"', 'warn');
+    return;
+  }
+  if (!document.getElementById('chk-count-confirm').checked) {
+    /* Defensa adicional: el botón ya está disabled hasta marcar el checkbox. */
+    toast('⚠️ Primero confirma que contaste físicamente las unidades', 'warn');
     return;
   }
   const payload = { operator_name: CONFIG.operatorName };
