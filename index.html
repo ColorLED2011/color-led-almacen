@@ -182,11 +182,15 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
 
     <div id="det-lines"></div>
 
+    <label class="card" style="display:flex;align-items:center;gap:8px;font-size:12px;cursor:pointer">
+      <input type="checkbox" id="chk-count-confirm">
+      Confirmo que conté físicamente las unidades del producto X y coinciden con la pantalla
+    </label>
     <button class="btn btn-outline" id="btn-photo-open" onclick="triggerPhoto('open')">📸 Fotos caja abierta</button>
     <button class="btn btn-outline" id="btn-print-labels" onclick="printLabels()">🏷️ Imprimir etiquetas</button>
     <button class="btn btn-outline" id="btn-photo-closed" onclick="triggerPhoto('closed')">📸 Fotos caja cerrada con etiqueta</button>
     <button class="btn btn-outline" id="btn-armed" onclick="pedidoArmado()">📦 Pedido armado</button>
-    <button class="btn btn-outline" id="btn-photo-dispatch" onclick="triggerPhoto('dispatch')">📸 Foto despacho firmado / Orden de carga CH EXPRESS</button>
+    <button class="btn btn-outline" id="btn-photo-dispatch" onclick="triggerPhoto('dispatch')">📸 Foto despacho CHEQUEADO y FIRMADO / Orden de Carga CH EXPRESS</button>
     <button class="btn btn-outline" id="btn-photo-received" onclick="triggerPhoto('received')" style="display:none">📸 Foto de mercancía recibida</button>
     <input type="file" id="photo-input" accept="image/*" capture="environment" style="display:none">
 
@@ -465,8 +469,8 @@ function renderDetail() {
      a "Pedido armado", requisito para habilitar la entrega (ver más abajo). */
   const btnDispatch = document.getElementById('btn-photo-dispatch');
   btnDispatch.textContent = p.has_dispatch_photo
-    ? '✅ Foto despacho firmado / Orden de carga CH EXPRESS'
-    : '📸 Foto despacho firmado / Orden de carga CH EXPRESS';
+    ? '✅ Foto despacho CHEQUEADO y FIRMADO / Orden de Carga CH EXPRESS'
+    : '📸 Foto despacho CHEQUEADO y FIRMADO / Orden de Carga CH EXPRESS';
 
   const btnV = document.getElementById('btn-validate');
   const btnS = document.getElementById('btn-shortage');
@@ -509,7 +513,7 @@ function renderDetail() {
     hint.textContent = 'Todo escaneado y foto tomada — toca "Pedido armado" para continuar.';
     hint.style.color = 'var(--warn)';
   } else {
-    hint.textContent = 'Pedido armado — falta subir la foto de "Despacho firmado" o la "Orden de carga CH EXPRESS" para poder entregarlo.';
+    hint.textContent = 'Pedido armado — falta subir la foto de "Despacho CHEQUEADO y FIRMADO" o la "Orden de Carga CH EXPRESS" para poder entregarlo.';
     hint.style.color = 'var(--warn)';
   }
 }
@@ -896,7 +900,7 @@ function onValidate() {
   }
   if (!p.has_dispatch_photo) {
     /* Defensa adicional: el botón ya está disabled hasta subir esta foto. */
-    toast('⚠️ Primero sube la foto de "Despacho firmado" o la "Orden de carga CH EXPRESS"', 'warn');
+    toast('⚠️ Primero sube la foto de "Despacho CHEQUEADO y FIRMADO" o la "Orden de Carga CH EXPRESS"', 'warn');
     return;
   }
   openCarrierModal();
