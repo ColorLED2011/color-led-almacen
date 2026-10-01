@@ -4,7 +4,7 @@
                Network-only para el Worker (API de Odoo/Telegram)
    ============================================================ */
 
-const CACHE = 'color-led-almacen-v19';
+const CACHE = 'color-led-almacen-v21';
 const ASSETS = [
   './index.html',
   './manifest.json',
