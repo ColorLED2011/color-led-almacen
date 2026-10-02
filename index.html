@@ -76,6 +76,16 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
 .line-qty.missing{color:var(--warn)}
 .line-done-badge{font-size:16px}
 
+/* ── Conteo de inventario ── */
+.ct-card{cursor:pointer}
+.ct-card.diff{border-color:var(--err)}
+.ct-card.done{border-color:var(--ok)}
+.ct-state{font-size:11px;margin-top:5px;font-weight:700}
+.ct-state.pend{color:var(--warn)}
+.ct-state.ok{color:var(--ok)}
+.ct-state.diff{color:var(--err)}
+.ct-tag{display:inline-block;font-size:10px;font-weight:800;border-radius:6px;padding:2px 7px;background:var(--panel2);color:var(--sub)}
+
 .btn-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 
 #scr-scanner{display:none;position:fixed;inset:0;z-index:9999;background:#000;flex-direction:column}
@@ -150,6 +160,37 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
         <span style="display:block;font-size:11px;font-weight:400;opacity:.85">Entradas de mercancía</span>
       </span>
     </button>
+    <button class="btn" style="padding:20px 16px;justify-content:flex-start;gap:14px;text-align:left;background:#7C3AED;color:#F3EEFF" onclick="openCountLists()">
+      <span style="font-size:22px">📋</span>
+      <span>
+        <span style="display:block;font-size:15px;font-weight:800">Conteo de inventario</span>
+        <span style="display:block;font-size:11px;font-weight:400;opacity:.85">Listas pedidas al bot de Telegram</span>
+      </span>
+    </button>
+  </div>
+
+  <!-- CONTEO: LISTAS -->
+  <div class="screen" id="scr-count-lists">
+    <div style="display:flex;align-items:center;gap:6px">
+      <button class="btn-icon" onclick="goTo('scr-home')" title="Volver al inicio">←</button>
+      <div style="font-size:15px;font-weight:800;flex:1">Conteo de inventario</div>
+    </div>
+    <button class="btn btn-outline" onclick="loadCountLists()">🔄 Actualizar</button>
+    <div id="ct-lists"></div>
+  </div>
+
+  <!-- CONTEO: PRODUCTOS DE UNA LISTA -->
+  <div class="screen" id="scr-count-items">
+    <button class="btn-icon" style="align-self:flex-start" onclick="openCountLists()">← Volver a las listas</button>
+    <div class="card">
+      <div class="det-name" id="ct-title">—</div>
+      <div class="det-partner" id="ct-sub">—</div>
+      <div class="progress-wrap"><div class="progress-bar" id="ct-progress" style="width:0%"></div></div>
+      <div class="progress-lbl" id="ct-progress-lbl">0 / 0 contados</div>
+    </div>
+    <div id="ct-items"></div>
+    <button class="btn btn-ok" id="btn-finish-count" onclick="onFinishCount()" disabled>✅ Finalizar conteo</button>
+    <div id="finish-hint" style="font-size:11px;color:var(--sub);text-align:center"></div>
   </div>
 
   <!-- LISTA DE ALBARANES (entregas o recepciones, según currentType) -->
@@ -216,6 +257,22 @@ html,body{height:100%;background:var(--bg);color:var(--text)}
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeCarrierModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="submitCarrier()">Registrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Conteo a ciegas: aquí NUNCA se muestra lo que Odoo tiene a la mano. -->
+<div class="modal-overlay" id="count-modal">
+  <div class="modal-box">
+    <h3 id="count-modal-title">Contar producto</h3>
+    <div class="modal-sub" id="count-modal-sub">—</div>
+    <div class="field" style="margin-bottom:10px">
+      <label for="count-qty" id="count-qty-label">¿Cuánto hay físicamente?</label>
+      <input id="count-qty" type="text" inputmode="decimal" autocomplete="off" placeholder="Ej. 16">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeCountModal()">Cancelar</button>
+      <button class="btn btn-primary" id="count-submit" onclick="submitCount()">Registrar conteo</button>
     </div>
   </div>
 </div>
@@ -991,6 +1048,152 @@ async function onShortage() {
 /* ═══════════════════════════════════════════════════════════════
    INICIO
    ═══════════════════════════════════════════════════════════════ */
+
+/* ═══════════════════════════════════════════════════════════════
+   CONTEO DE INVENTARIO — listas pedidas al bot (@Almacen_CL_bot)
+   A CIEGAS: la app nunca recibe la existencia de Odoo de un producto
+   sin contar. Se manda lo contado, el Worker compara y responde.
+   Necesita conexión (no entra en la cola offline).
+   ═══════════════════════════════════════════════════════════════ */
+let currentList = null;
+let countingItem = null;
+const escH = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function openCountLists() {
+  goTo('scr-count-lists');
+  loadCountLists();
+}
+
+async function loadCountLists() {
+  const el = document.getElementById('ct-lists');
+  el.innerHTML = '<div class="loading">Cargando…</div>';
+  try {
+    const { lists } = await apiFetch('/count/lists');
+    if (!lists.length) {
+      el.innerHTML = '<div class="empty">No hay listas de conteo abiertas.<br><br>Pídele una al bot en el grupo de supervisión:<br><b>Inventariar Categoria …</b> o <b>Inventariar …</b></div>';
+      return;
+    }
+    el.innerHTML = lists.map(l => `
+      <div class="card ct-card ${l.pending === 0 ? 'done' : ''}" style="margin-bottom:8px" onclick="openCountList('${l.id}')">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="flex:1;min-width:0">
+            <div class="pk-name">${escH(l.title)}</div>
+            <div class="pk-meta"><span class="ct-tag">${l.kind === 'categoria' ? 'Categoría' : 'Búsqueda'}</span> · pedida por ${escH(l.created_by)}</div>
+            <div class="ct-state ${l.pending === 0 ? 'ok' : 'pend'}">${l.done} / ${l.total} contados${l.diffs ? `<span class="ct-state diff"> · ${l.diffs} con diferencia</span>` : ''}</div>
+          </div>
+          <span class="pk-arrow">›</span>
+        </div>
+      </div>`).join('');
+  } catch (e) {
+    el.innerHTML = `<div class="empty">❌ ${escH(e.message)}</div>`;
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+async function openCountList(id) {
+  goTo('scr-count-items');
+  document.getElementById('ct-items').innerHTML = '<div class="loading">Cargando…</div>';
+  try {
+    currentList = (await apiFetch('/count/list/' + id)).list;
+    renderCountList();
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+function renderCountList() {
+  const l = currentList;
+  document.getElementById('ct-title').textContent = l.title;
+  document.getElementById('ct-sub').textContent = 'Pedida por ' + (l.created_by || 'Telegram') + (l.truncated ? ' · recortada al tope de 400' : '');
+  document.getElementById('ct-progress').style.width = (l.total ? Math.round(100 * l.done / l.total) : 0) + '%';
+  document.getElementById('ct-progress-lbl').textContent = `${l.done} / ${l.total} contados` + (l.diffs ? ` · ${l.diffs} con diferencia` : '');
+
+  /* Mismo bloqueo que "Pedido entregado": a medias no se cierra. */
+  const faltan = Math.max(0, l.total - l.done);
+  document.getElementById('btn-finish-count').disabled = faltan > 0;
+  document.getElementById('finish-hint').textContent = faltan > 0 ? `Faltan ${faltan} producto(s) por contar para poder finalizar` : '';
+
+  document.getElementById('ct-items').innerHTML = l.items.map(i => {
+    const c = i.counted, um = escH(i.uom || 'unidades');
+    let estado, clase = '';
+    if (!c) estado = `<div class="ct-state pend">Pendiente de contar · en ${um}</div>`;
+    else if (c.diff === 0) { estado = `<div class="ct-state ok">✅ Cuadra · contado ${fmtQty(c.qty)} ${um}</div>`; clase = 'done'; }
+    else { estado = `<div class="ct-state diff">⚠️ Contado ${fmtQty(c.qty)} · sistema ${fmtQty(c.odoo_qty)} ${um} · ${c.diff > 0 ? '+' : ''}${fmtQty(c.diff)}</div>`; clase = 'diff'; }
+    return `
+      <div class="card ct-card ${clase}" style="margin-bottom:8px" onclick="openCountModal(${i.product_id})">
+        <div class="line-name">${escH(i.name)}</div>
+        <div class="line-code">${escH(i.code || 'sin código')}</div>
+        ${estado}
+        ${c ? `<div class="pk-meta">Contó ${escH(c.operator)}${c.recounts ? ' · ' + c.recounts + ' recuento(s)' : ''}</div>` : ''}
+      </div>`;
+  }).join('');
+}
+
+function openCountModal(productId) {
+  const item = currentList.items.find(i => i.product_id === productId);
+  if (!item) return;
+  countingItem = item;
+  document.getElementById('count-modal-title').textContent = item.counted ? 'Recontar producto' : 'Contar producto';
+  document.getElementById('count-modal-sub').innerHTML = `${escH(item.name)}<br>${escH(item.code || 'sin código')}` +
+    (item.counted ? '<br>Ya contado: queda el registro de los dos conteos' : '');
+  document.getElementById('count-qty-label').textContent = `¿Cuánto hay físicamente? (en ${item.uom || 'unidades'})`;
+  const input = document.getElementById('count-qty');
+  input.value = '';
+  document.getElementById('count-modal').classList.add('open');
+  setTimeout(() => input.focus(), 50);
+}
+
+function closeCountModal() {
+  document.getElementById('count-modal').classList.remove('open');
+  countingItem = null;
+}
+
+async function submitCount() {
+  if (!countingItem || !currentList) return;
+  const raw = document.getElementById('count-qty').value.trim();
+  if (raw === '') { toast('⚠️ Escribe cuánto contaste', 'warn'); return; }
+  const qty = Number(raw.replace(',', '.'));
+  if (!isFinite(qty) || qty < 0) { toast('⚠️ Cantidad inválida', 'warn'); return; }
+  const btn = document.getElementById('count-submit');
+  btn.disabled = true;
+  try {
+    const data = await apiFetch(`/count/list/${currentList.id}/register`, {
+      method: 'POST',
+      body: { product_id: countingItem.product_id, qty, operator_name: CONFIG.operatorName },
+    });
+    currentList = data.list;
+    closeCountModal();
+    renderCountList();
+    const r = data.result;
+    if (r.match) toast('✅ Cuadra con el sistema');
+    else toast(`⚠️ Diferencia de ${r.diff > 0 ? '+' : ''}${fmtQty(r.diff)} — avisado al grupo`, 'error');
+  } catch (e) {
+    toast('❌ ' + e.message + ' — intenta de nuevo', 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function onFinishCount() {
+  if (!currentList) return;
+  const faltan = Math.max(0, currentList.total - currentList.done);
+  if (faltan > 0) { toast(`⚠️ Faltan ${faltan} producto(s) por contar`, 'warn'); return; }
+  if (!confirm('¿Finalizar este conteo? Se avisa al grupo de supervisión y la lista ya no aparecerá en la app.')) return;
+  try {
+    await apiFetch(`/count/list/${currentList.id}/close`, { method: 'POST', body: { operator_name: CONFIG.operatorName } });
+    toast('✅ Conteo terminado');
+    openCountLists();
+  } catch (e) {
+    toast('❌ ' + e.message, 'error');
+  }
+}
+
+document.getElementById('count-modal').addEventListener('click', e => { if (e.target.id === 'count-modal') closeCountModal(); });
+document.getElementById('count-qty').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); submitCount(); }
+  if (e.key === 'Escape') closeCountModal();
+});
+
 (function init() {
   if (CONFIG && CONFIG.operatorName) {
     /* El Worker/API Key siempre se toman de las constantes fijas,
