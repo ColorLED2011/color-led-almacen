@@ -1184,7 +1184,7 @@ async function onFinishCount() {
   const faltan = Math.max(0, currentList.total - currentList.done);
   if (faltan > 0) { toast(`⚠️ Faltan ${faltan} producto(s) por contar`, 'warn'); return; }
   if (currentList.diffs > 0) { toast(`⚠️ ${currentList.diffs} producto(s) no cuadran con el sistema`, 'warn'); return; }
-  if (!confirm('¿Finalizar este conteo? Se avisa al grupo de supervisión y la lista queda guardada como finalizada (ya no se puede modificar).')) return;
+  if (!confirm('¿Finalizar este conteo? La lista queda guardada como finalizada (ya no se puede modificar).')) return;
   try {
     await apiFetch(`/count/list/${currentList.id}/close`, { method: 'POST', body: { operator_name: CONFIG.operatorName } });
     toast('✅ Conteo terminado');
