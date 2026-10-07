@@ -1069,7 +1069,7 @@ async function loadCountLists() {
   try {
     const { lists } = await apiFetch('/count/lists');
     if (!lists.length) {
-      el.innerHTML = '<div class="empty">No hay listas de conteo abiertas.<br><br>Pídele una al bot en el grupo de supervisión:<br><b>Inventariar Categoria …</b> o <b>Inventariar …</b></div>';
+      el.innerHTML = '<div class="empty">No hay listas de conteo.<br><br>Pídele una al bot en el grupo de supervisión:<br><b>Inventariar Categoria …</b> o <b>Inventariar …</b></div>';
       return;
     }
     el.innerHTML = lists.map(l => `
@@ -1078,7 +1078,7 @@ async function loadCountLists() {
           <div style="flex:1;min-width:0">
             <div class="pk-name">${escH(l.title)}</div>
             <div class="pk-meta"><span class="ct-tag">${l.kind === 'categoria' ? 'Categoría' : 'Búsqueda'}</span> · pedida por ${escH(l.created_by)}</div>
-            <div class="ct-state ${l.pending === 0 ? 'ok' : 'pend'}">${l.done} / ${l.total} contados${l.diffs ? `<span class="ct-state diff"> · ${l.diffs} con diferencia</span>` : ''}</div>
+            <div class="ct-state ${l.pending === 0 ? 'ok' : 'pend'}">${l.closed_at ? '🔒 Finalizado · ' : ''}${l.done} / ${l.total} contados${l.diffs ? `<span class="ct-state diff"> · ${l.diffs} con diferencia</span>` : ''}</div>
           </div>
           <span class="pk-arrow">›</span>
         </div>
@@ -1107,10 +1107,15 @@ function renderCountList() {
   document.getElementById('ct-progress').style.width = (l.total ? Math.round(100 * l.done / l.total) : 0) + '%';
   document.getElementById('ct-progress-lbl').textContent = `${l.done} / ${l.total} contados` + (l.diffs ? ` · ${l.diffs} con diferencia` : '');
 
-  /* Mismo bloqueo que "Pedido entregado": a medias no se cierra. */
+  /* Mismo bloqueo que "Pedido entregado": a medias no se cierra, y tampoco
+     si algún producto no cuadra con el sistema. Finalizada: solo lectura. */
   const faltan = Math.max(0, l.total - l.done);
-  document.getElementById('btn-finish-count').disabled = faltan > 0;
-  document.getElementById('finish-hint').textContent = faltan > 0 ? `Faltan ${faltan} producto(s) por contar para poder finalizar` : '';
+  document.getElementById('btn-finish-count').disabled = !!l.closed_at || faltan > 0 || l.diffs > 0;
+  document.getElementById('finish-hint').textContent =
+    l.closed_at ? `🔒 Conteo finalizado por ${l.closed_by || '—'} el ${new Date(l.closed_at).toLocaleString('es-VE')}`
+    : faltan > 0 ? `Faltan ${faltan} producto(s) por contar para poder finalizar`
+    : l.diffs > 0 ? `${l.diffs} producto(s) no cuadran con el sistema: recuéntalos para poder finalizar`
+    : '';
 
   document.getElementById('ct-items').innerHTML = l.items.map(i => {
     const c = i.counted, um = escH(i.uom || 'unidades');
@@ -1131,6 +1136,7 @@ function renderCountList() {
 function openCountModal(productId) {
   const item = currentList.items.find(i => i.product_id === productId);
   if (!item) return;
+  if (currentList.closed_at) { toast('🔒 Este conteo ya está finalizado', 'warn'); return; }
   countingItem = item;
   document.getElementById('count-modal-title').textContent = item.counted ? 'Recontar producto' : 'Contar producto';
   document.getElementById('count-modal-sub').innerHTML = `${escH(item.name)}<br>${escH(item.code || 'sin código')}` +
@@ -1177,7 +1183,8 @@ async function onFinishCount() {
   if (!currentList) return;
   const faltan = Math.max(0, currentList.total - currentList.done);
   if (faltan > 0) { toast(`⚠️ Faltan ${faltan} producto(s) por contar`, 'warn'); return; }
-  if (!confirm('¿Finalizar este conteo? Se avisa al grupo de supervisión y la lista ya no aparecerá en la app.')) return;
+  if (currentList.diffs > 0) { toast(`⚠️ ${currentList.diffs} producto(s) no cuadran con el sistema`, 'warn'); return; }
+  if (!confirm('¿Finalizar este conteo? Se avisa al grupo de supervisión y la lista queda guardada como finalizada (ya no se puede modificar).')) return;
   try {
     await apiFetch(`/count/list/${currentList.id}/close`, { method: 'POST', body: { operator_name: CONFIG.operatorName } });
     toast('✅ Conteo terminado');
