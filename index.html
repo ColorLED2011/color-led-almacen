@@ -1110,9 +1110,11 @@ function renderCountList() {
   /* Mismo bloqueo que "Pedido entregado": a medias no se cierra, y tampoco
      si algún producto no cuadra con el sistema. Finalizada: solo lectura. */
   const faltan = Math.max(0, l.total - l.done);
-  document.getElementById('btn-finish-count').disabled = !!l.closed_at || faltan > 0 || l.diffs > 0;
+  const btnFin = document.getElementById('btn-finish-count');
+  btnFin.disabled = !!l.closed_at || faltan > 0 || l.diffs > 0;
+  btnFin.textContent = l.closed_at ? '🔒 CONTEO FINALIZADO' : '✅ Finalizar conteo';
   document.getElementById('finish-hint').textContent =
-    l.closed_at ? `🔒 Conteo finalizado por ${l.closed_by || '—'} el ${new Date(l.closed_at).toLocaleString('es-VE')}`
+    l.closed_at ? `Finalizado por ${l.closed_by || '—'} el${new Date(l.closed_at).toLocaleString('es-VE')}`
     : faltan > 0 ? `Faltan ${faltan} producto(s) por contar para poder finalizar`
     : l.diffs > 0 ? `${l.diffs} producto(s) no cuadran con el sistema: recuéntalos para poder finalizar`
     : '';
